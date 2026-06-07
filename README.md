@@ -20,3 +20,4 @@ Existing output files are overwritten and backed up as `<output>.bak.<timestamp>
 
 - `kick` actions and `reports` are dropped (not supported by txAdmin v5); counts are printed in the summary.
 - `ban` and `warn` actions are preserved; missing `revocation` becomes `{ timestamp: null, author: null }`.
+- `license:<hash>` is guaranteed to be in each player's `ids` array (txAdmin requires it for history lookup).

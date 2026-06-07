@@ -310,9 +310,11 @@ function migrateDatabase(input: FxDatabase): { database: TxDatabase; summary: Mi
     };
 
     const players: TxPlayer[] = input.players.map((p) => {
+        const licenseId = `license:${p.license}`;
+        const ids = p.ids.includes(licenseId) ? [...p.ids] : [licenseId, ...p.ids];
         const out: TxPlayer = {
             license: p.license,
-            ids: [...p.ids],
+            ids,
             hwids: [...p.hwids],
             displayName: p.displayName,
             pureName: p.pureName,
