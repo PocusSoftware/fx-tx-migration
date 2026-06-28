@@ -103,6 +103,7 @@ type MigrationSummary = {
 
 const usage = `Usage:
   bun start --input <fxPanel folder>
+  bun start <fxPanel folder>
 
 Options:
   --help    Show this help message.
@@ -128,7 +129,9 @@ function parseArgs(argv: string[]): CliOptions {
         const arg = argv[i];
         if (arg === '--help' || arg === '-h') { console.log(usage.trimEnd()); process.exit(0); }
         else if (arg === '--input') inputDir = argv[++i];
-        else fail(`Unknown argument: ${arg}\n\n${usage.trimEnd()}`);
+        else if (arg !== undefined && arg.startsWith('--')) fail(`Unknown argument: ${arg}\n\n${usage.trimEnd()}`);
+        else if (inputDir === undefined) inputDir = arg;  // accept a bare positional path
+        else fail(`Unexpected argument: ${arg}\n\n${usage.trimEnd()}`);
     }
 
     if (!inputDir) fail(`Missing --input.\n\n${usage.trimEnd()}`);
@@ -156,6 +159,11 @@ async function backupFile(filePath: string, backupDir: string): Promise<void> {
     console.log(`  Backed up: ${filePath} → ${dest}`);
 }
 
+// Directories that never contain panel files but hold tons of resource configs
+// (e.g. txData/<base>/resources/...). Skipping them keeps the search fast and
+// prevents grabbing a resource's config.json instead of the panel's.
+const SKIP_DIRS = new Set(['resources', 'node_modules', '.git']);
+
 function findFiles(dir: string, targets: Set<string>): Map<string, string> {
     const found = new Map<string, string>();
 
@@ -169,6 +177,7 @@ function findFiles(dir: string, targets: Set<string>): Map<string, string> {
             try { info = statSync(full); } catch { continue; }
 
             if (info.isDirectory()) {
+                if (SKIP_DIRS.has(entry)) continue;
                 walk(full);
             } else if (targets.has(entry) && !found.has(entry)) {
                 found.set(entry, full);
@@ -482,11 +491,23 @@ async function main() {
 
     console.log(`\nScanning: ${inputDir}`);
 
-    const found = findFiles(inputDir, new Set(['playersDB.json', 'admins.json', 'config.json']));
+    // Prefer the canonical fxPanel/txAdmin locations before falling back to a
+    // recursive search. A real txData folder contains dozens of resource
+    // config.json files under resources/, so blindly grabbing the first match
+    // would migrate the wrong file.
+    const canonical = {
+        'playersDB.json': join(inputDir, 'default', 'data', 'playersDB.json'),
+        'admins.json':    join(inputDir, 'admins.json'),
+        'config.json':    join(inputDir, 'config.json'),
+    };
 
-    const playersDbPath = found.get('playersDB.json');
-    const adminsPath    = found.get('admins.json');
-    const configPath    = found.get('config.json');
+    const found = findFiles(inputDir, new Set(['playersDB.json', 'admins.json', 'config.json']));
+    const resolveInput = async (name: keyof typeof canonical) =>
+        (await fileExists(canonical[name]) ? canonical[name] : found.get(name))!;
+
+    const playersDbPath = await resolveInput('playersDB.json');
+    const adminsPath    = await resolveInput('admins.json');
+    const configPath    = await resolveInput('config.json');
 
     if (!playersDbPath) fail('Could not find playersDB.json in the input folder.');
     if (!adminsPath)    fail('Could not find admins.json in the input folder.');
